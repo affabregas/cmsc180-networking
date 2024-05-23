@@ -19,7 +19,7 @@
 
 #define NUMBER_OF_THREADS 11
 #define NO_OF_CLI 2;
-#define SERVER_IP "10.0.5.229"
+#define SERVER_IP "127.0.0.1"
 
 
 void display_table(char **x, int n, int c, double* y) {
@@ -251,6 +251,7 @@ int main(int argc, char **argv) {
         printf("Couldn't bind to the port\n");
         return -1;
     }
+    
     printf("Socket binding: DONE\n");
 
     // Turn on the socket to listen for incoming connections:
