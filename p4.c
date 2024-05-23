@@ -17,9 +17,9 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 
-#define NUMBER_OF_THREADS 2
-#define NO_OF_CLI 1;
-#define SERVER_IP "10.0.2.4"
+#define NUMBER_OF_THREADS 11
+#define NO_OF_CLI 2;
+#define SERVER_IP "10.0.5.229"
 
 
 void display_table(char **x, int n, int c, double* y) {
@@ -158,37 +158,41 @@ void *recieve_client(void *arg) {
     int end = (a->id + 1) * (a->no_of_inputs/a->no_of_clients);
     int status = 1;
     
-    printf("is this the same: s: %d, e: %d, %d %d\n", start, end, (end-start), a->no_of_cols);
+    //printf("is this the same: s: %d, e: %d, %d %d\n", start, end, (end-start), a->no_of_cols);
     if (a->id == a->no_of_clients-1) end = a->no_of_inputs; 
-    printf("recieve client bounds: %d %d\n", start, end);
+    //printf("recieve client bounds: %d %d\n", start, end);
     
     
     for(int i = start ; i < end; i++) {
-    	// printf("Attempting to send xVec %d\n",i);
+    	//printf("Attempting to send xVec %d\n",i);
         if (send(a->client_socket, a->xVec[i], sizeof(char) * a->no_of_inputs, 0) < 0){
             printf("Can't send [xVec]\n");
             return NULL;
         }
-    	// printf("Waiting for ack from xVec %d\n",i);
+    	printf("Waiting for ack from xVec %d\n",i);
         //wait for ack
         recv(a->client_socket, &status, sizeof(int), 0);
-        // printf("Ack recieved from xVec %d\n",i);
+        printf("Ack recieved from xVec %d\n",i);
         // sleep(1);
     }
     
 
+    
 
-
-
-    if (send(a->client_socket, a->yVec, sizeof(double) * a->no_of_inputs, 0) < 0){
-        printf("Can't send [yVec]\n");
+    int revstat = send(a->client_socket, a->yVec, sizeof(double) * a->no_of_inputs, 0);
+    	if (revstat < 0) {
+        printf("Error in sending yVec to client\n");
         return NULL;
-    }
+    	}
+
+    
 
     if (recv(a->client_socket, a->result, sizeof(double) * a->no_of_cols, 0) < 0) {
         printf("Error in reading client\n");
         return NULL;
     }
+    
+    
     int base_offset = a->no_of_inputs / a->no_of_clients;
     for(int i = 0; i < a->no_of_cols; i++) {
     //    printf("r (%d): %lf\n", a->id, a->result[i]);     DEBUG
@@ -204,6 +208,8 @@ void *recieve_client(void *arg) {
 
 
 int main(int argc, char **argv) {
+
+
     int NumberOfInputs = atoi(argv[1]);
     int PORT_NUMBER = atoi(argv[2]);
     int INSTANCE_STATUS = atoi(argv[3]);
@@ -406,20 +412,14 @@ int main(int argc, char **argv) {
 
     clock_gettime(CLOCK_MONOTONIC, &after);
     double runtime = (((double) 1000*after.tv_sec + after.tv_nsec/1000000.0) - ((double) 1000*before.tv_sec + before.tv_nsec/1000000.0));
-            printf("-- RUNTIME --\n");
-            printf("%lf ms\n", runtime);
-             printf("-------------\n");
+            printf("\n-- RUNTIME (ms) --\n");
+            printf("%lf\n", runtime);
+            printf("-------------\n");
 
-
-
-    printf("integrity check: %lf\n",rVec[0]);
-
-
-
-
-
-
-
+    FILE *fptr;
+    fptr = fopen("runtime.txt", "a");
+    fprintf(fptr, "%lf ", runtime);
+    fclose(fptr); 
 
 
     // Client code
@@ -448,7 +448,12 @@ int main(int argc, char **argv) {
                 printf("Unable to connect\n");
                 return -1;
             }
-            printf("Connected with server successfully\n");
+            // printf("Connected with server successfully\n");
+
+
+            
+
+
 
             int client_id = 0;
             int client_cols = 0;
@@ -488,23 +493,24 @@ int main(int argc, char **argv) {
                 total_recieved = 0;
             	
             	// send an ack
-            	// printf("Sending ack for xVec %d\n",i);
+            	printf("Sending ack for xVec %d\n",i);
             	send(socket_desc, &sendme, sizeof(int), 0);
             }
 
+
+            // while loop to recieve entire thing
             double* client_y_array = malloc(sizeof(double) * NumberOfInputs);
             double* return_array = malloc(sizeof(double) * client_cols);
 
-	   int total_recieved = 0;
 	   
-	   while(total_recieved < sizeof(double)*NumberOfInputs) {
-	   	int revstat = recv(socket_desc, client_y_array, sizeof(double) * NumberOfInputs, 0);
+
+	   	    int revstat = recv(socket_desc, client_y_array+total_recieved, sizeof(double) * (NumberOfInputs), 0);
+            //printf("Recieved bytes: %d\n",revstat);
             if(revstat < 0){
-                printf("Error while receiving server's msg\n");
+                printf("Error while receiving server's msg (yVec, total recv = %d)\n",total_recieved);
                 return -1;
             }
-            total_recieved += revstat;
-	   }
+
 	   
 
             // ok now we have the 1d array, lets convert it to 2d
@@ -522,7 +528,7 @@ int main(int argc, char **argv) {
 
                     if (i == NUMBER_OF_THREADS-1) end = client_cols;
 
-                    printf("s: %d, e: %d\n",start, end);
+                    // printf("s: %d, e: %d\n",start, end);
 
                     argHolder[i].x = twod_client_array;
                     argHolder[i].y = client_y_array;
@@ -535,13 +541,23 @@ int main(int argc, char **argv) {
             
             // display_table(twod_client_array, NumberOfInputs, client_cols, client_y_array);
 
+
+            struct timespec before = {0,0}, after = {0,0};
+            clock_gettime(CLOCK_MONOTONIC, &before);
             pearson_cor(twod_client_array, client_y_array, NumberOfInputs, return_array, NUMBER_OF_THREADS, argHolder, tid);
-            printf("integrity check: %lf\n", return_array[0]);
             
+            clock_gettime(CLOCK_MONOTONIC, &after);
+            double runtime = (((double) 1000*after.tv_sec + after.tv_nsec/1000000.0) - ((double) 1000*before.tv_sec + before.tv_nsec/1000000.0));
+            printf("\n-- CLIENT RUNTIME (ms) --\n");
+            printf("%lf\n", runtime);
+            printf("-------------\n");
+
             if(send(socket_desc, return_array, sizeof(double) * client_cols, 0) < 0){
                 printf("Unable to send message\n");
                 return -1;
             } 
+
+            
 
         
     }
